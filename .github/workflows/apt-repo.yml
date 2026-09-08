@@ -18,16 +18,56 @@ jobs:
 
       - name: Setup Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y dpkg-dev wget coreutils zip
+          sudo apt-get update && sudo apt-get install -y dpkg-dev wget coreutils zip python3
           mkdir -p docs/apt/dists/stable/main/binary-aarch64
 
       - name: Download & Patch Official Termux Packages
         run: |
           wget -q https://packages-cf.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages
           
+          # Python script to resolve dependencies
+          cat << 'PYEOF' > resolve_deps.py
+          import re, sys
+          def parse_packages(file_path):
+              packages = {}; current_pkg = {}
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  for line in f:
+                      if line.strip() == "":
+                          if "Package" in current_pkg: packages[current_pkg["Package"]] = current_pkg
+                          current_pkg = {}
+                      else:
+                          if ":" in line:
+                              key, val = line.split(":", 1)
+                              current_pkg[key.strip()] = val.strip()
+              return packages
+
+          def resolve(pkgs_dict, start_pkgs):
+              visited = set(); queue = list(start_pkgs)
+              while queue:
+                  pkg = queue.pop(0)
+                  if pkg in visited: continue
+                  visited.add(pkg)
+                  if pkg not in pkgs_dict: continue
+                  deps_str = pkgs_dict[pkg].get("Depends", "")
+                  if deps_str:
+                      deps = [d.split("(")[0].strip() for d in deps_str.split(",")]
+                      for d in deps:
+                          d = d.split("|")[0].strip()
+                          if d and d not in visited: queue.append(d)
+              return visited
+
+          if __name__ == "__main__":
+              pkgs = parse_packages("Packages")
+              start = sys.argv[1].split()
+              print(" ".join(resolve(pkgs, start)))
+          PYEOF
+          
           IDE_PKGS="openjdk-17 openjdk-21 gradle aapt aapt2 apksigner dx android-tools clang ndk-sysroot lld cmake make git python wget curl jq ca-certificates openssh zlib dbus libcompiler-rt"
           
-          for pkg in $IDE_PKGS; do
+          ALL_PKGS=$(python3 resolve_deps.py "$IDE_PKGS")
+          echo "Total packages to mirror: $(echo $ALL_PKGS | wc -w)"
+          
+          for pkg in $ALL_PKGS; do
             echo "Fetching $pkg..."
             DEB_FILE=$(grep -A 15 "^Package: $pkg$" Packages | grep "^Filename: " | head -n 1 | awk '{print $2}')
             if [ -n "$DEB_FILE" ]; then

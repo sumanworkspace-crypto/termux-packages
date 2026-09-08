@@ -26,7 +26,7 @@ HAVE_SETEXECFILECON_FALSE=#
 --without-selinux
 DPKG_PAGER=pager
 ac_cv_header_md5_h=yes
-ac_cv_func_MD5Init=no
+ac_cv_lib_md_MD5Init=yes
 "
 
 TERMUX_PKG_RM_AFTER_INSTALL="

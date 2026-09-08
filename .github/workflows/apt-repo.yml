@@ -17,10 +17,10 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        continue-on-error: true
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
-          continue-on-error: true
 
       - name: Create tree if gh-pages is empty
         run: |

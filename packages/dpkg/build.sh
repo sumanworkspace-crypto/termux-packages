@@ -27,8 +27,6 @@ HAVE_SETEXECFILECON_FALSE=#
 DPKG_PAGER=pager
 ac_cv_header_md5_h=yes
 ac_cv_lib_md_MD5Init=yes
-LIBS=-lmd
-CPPFLAGS=-I${TERMUX_PREFIX}/include
 "
 
 TERMUX_PKG_RM_AFTER_INSTALL="
@@ -83,6 +81,9 @@ termux_step_pre_configure() {
 		patch -p1 -i "${TERMUX_PKG_BUILDER_DIR}"/configure.diff
 	)
 	export TAR=tar # To make sure dpkg tries to use "tar" instead of e.g. "gnutar" (which happens when building on OS X)
+	export LIBS="-lmd"
+	export CPPFLAGS="${CPPFLAGS} -I${TERMUX_PREFIX}/include"
+	export LDFLAGS="${LDFLAGS} -L${TERMUX_PREFIX}/lib"
 	perl -p -i -e "s/TERMUX_ARCH/$TERMUX_ARCH/" $TERMUX_PKG_SRCDIR/configure
 	sed -i 's/$req_vars = \$arch_vars.$varname./if ($varname eq "DEB_HOST_ARCH_CPU" or $varname eq "DEB_HOST_ARCH"){ print("'$TERMUX_ARCH'");exit; }; $req_vars = $arch_vars{$varname}/' scripts/dpkg-architecture.pl
 }

@@ -25,6 +25,8 @@ HAVE_SETEXECFILECON_FALSE=#
 --host=${TERMUX_ARCH}-linux
 --without-selinux
 DPKG_PAGER=pager
+ac_cv_header_md5_h=yes
+ac_cv_func_MD5Init=no
 "
 
 TERMUX_PKG_RM_AFTER_INSTALL="

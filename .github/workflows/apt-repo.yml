@@ -33,16 +33,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            let runId = context.payload.workflow_run ? context.payload.workflow_run.id : null;
-            if (!runId) {
-              const runs = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'packages.yml',
-                status: 'success'
-              });
-              runId = runs.data.workflow_runs[0].id;
-            }
+            let runId = 34215976376;
             let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
                owner: context.repo.owner,
                repo: context.repo.repo,

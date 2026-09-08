@@ -27,6 +27,8 @@ HAVE_SETEXECFILECON_FALSE=#
 DPKG_PAGER=pager
 ac_cv_header_md5_h=yes
 ac_cv_lib_md_MD5Init=yes
+LIBS=-lmd
+CPPFLAGS=-I${TERMUX_PREFIX}/include
 "
 
 TERMUX_PKG_RM_AFTER_INSTALL="

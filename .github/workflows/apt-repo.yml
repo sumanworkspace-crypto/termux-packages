@@ -1,0 +1,84 @@
+name: Publish APT Repo to GitHub Pages
+on:
+  workflow_run:
+    workflows: ["Packages"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          ref: gh-pages
+          continue-on-error: true
+
+      - name: Create tree if gh-pages is empty
+        run: |
+          mkdir -p docs/apt/dists/stable/main/binary-aarch64
+          mkdir -p docs/apt/dists/stable/main/binary-arm
+          mkdir -p docs/apt/dists/stable/main/binary-i686
+          mkdir -p docs/apt/dists/stable/main/binary-x86_64
+
+      - name: Download Artifacts from Packages workflow
+        uses: actions/github-script@v6
+        with:
+          script: |
+            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: context.payload.workflow_run.id,
+            });
+            let matchArtifacts = allArtifacts.data.artifacts.filter((artifact) => {
+              return artifact.name.endsWith("debs");
+            });
+            for (const artifact of matchArtifacts) {
+              let download = await github.rest.actions.downloadArtifact({
+                 owner: context.repo.owner,
+                 repo: context.repo.repo,
+                 artifact_id: artifact.id,
+                 archive_format: 'zip',
+              });
+              let fs = require('fs');
+              fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/${artifact.name}.zip`, Buffer.from(download.data));
+            }
+
+      - name: Extract and Organize Debs
+        run: |
+          unzip -o \*.zip -d extracted_debs || true
+          find extracted_debs -name "*.deb" -type f | while read deb; do
+            arch=$(dpkg-deb -I "$deb" | grep Architecture | awk '{print $2}')
+            if [ "$arch" == "aarch64" ] || [ "$arch" == "arm" ] || [ "$arch" == "i686" ] || [ "$arch" == "x86_64" ]; then
+               cp "$deb" "docs/apt/dists/stable/main/binary-$arch/"
+            fi
+          done
+
+      - name: Generate APT Metadata
+        run: |
+          sudo apt-get update && sudo apt-get install -y dpkg-dev
+          cd docs/apt
+          for arch in aarch64 arm i686 x86_64; do
+            mkdir -p dists/stable/main/binary-$arch
+            dpkg-scanpackages dists/stable/main/binary-$arch /dev/null | gzip -9c > dists/stable/main/binary-$arch/Packages.gz
+          done
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: './docs'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2

@@ -49,7 +49,7 @@ jobs:
                run_id: runId,
             });
             let matchArtifacts = allArtifacts.data.artifacts.filter((artifact) => {
-              return artifact.name.endsWith("debs");
+              return artifact.name.startsWith("debs");
             });
             for (const artifact of matchArtifacts) {
               let download = await github.rest.actions.downloadArtifact({

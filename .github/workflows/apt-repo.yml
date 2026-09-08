@@ -1,10 +1,8 @@
-name: Publish APT Repo to GitHub Pages
+name: Liquid OS Auto-Patcher Repo
 on:
-  workflow_run:
-    workflows: ["Packages"]
-    types:
-      - completed
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly
 
 permissions:
   contents: write
@@ -12,65 +10,50 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
+  build-repo:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout repo
-        continue-on-error: true
         uses: actions/checkout@v4
-        with:
-          ref: gh-pages
 
-      - name: Create tree if gh-pages is empty
+      - name: Setup Tools
         run: |
+          sudo apt-get update && sudo apt-get install -y dpkg-dev wget coreutils zip
           mkdir -p docs/apt/dists/stable/main/binary-aarch64
-          mkdir -p docs/apt/dists/stable/main/binary-arm
-          mkdir -p docs/apt/dists/stable/main/binary-i686
-          mkdir -p docs/apt/dists/stable/main/binary-x86_64
 
-      - name: Download Artifacts from Packages workflow
-        uses: actions/github-script@v6
-        with:
-          script: |
-            let runId = 34215976376;
-            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               run_id: runId,
-            });
-            let matchArtifacts = allArtifacts.data.artifacts.filter((artifact) => {
-              return artifact.name.startsWith("debs");
-            });
-            for (const artifact of matchArtifacts) {
-              let download = await github.rest.actions.downloadArtifact({
-                 owner: context.repo.owner,
-                 repo: context.repo.repo,
-                 artifact_id: artifact.id,
-                 archive_format: 'zip',
-              });
-              let fs = require('fs');
-              fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/${artifact.name}.zip`, Buffer.from(download.data));
-            }
-
-      - name: Extract and Organize Debs
+      - name: Download & Patch Official Termux Packages
         run: |
-          unzip -o \*.zip -d extracted_debs || true
-          find extracted_debs -name "*.deb" -type f | while read deb; do
-            arch=$(dpkg-deb -I "$deb" | grep Architecture | awk '{print $2}')
-            if [ "$arch" == "aarch64" ] || [ "$arch" == "arm" ] || [ "$arch" == "i686" ] || [ "$arch" == "x86_64" ]; then
-               cp "$deb" "docs/apt/dists/stable/main/binary-$arch/"
+          wget -q https://packages-cf.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages
+          
+          IDE_PKGS="openjdk-17 openjdk-21 gradle aapt aapt2 apksigner dx android-tools clang ndk-sysroot lld cmake make git python wget curl jq ca-certificates openssh zlib dbus libcompiler-rt"
+          
+          for pkg in $IDE_PKGS; do
+            echo "Fetching $pkg..."
+            DEB_FILE=$(grep -A 15 "^Package: $pkg$" Packages | grep "^Filename: " | head -n 1 | awk '{print $2}')
+            if [ -n "$DEB_FILE" ]; then
+                wget -q "https://packages-cf.termux.dev/apt/termux-main/$DEB_FILE" -O temp.deb
+                dpkg-deb -R temp.deb tmp_dir
+                
+                if [ -d "tmp_dir/data/data/com.termux" ]; then
+                    mkdir -p "tmp_dir/data/data"
+                    mv "tmp_dir/data/data/com.termux" "tmp_dir/data/data/com.liquid"
+                fi
+                if [ -d "tmp_dir/DEBIAN" ]; then chmod 755 tmp_dir/DEBIAN/* 2>/dev/null || true; fi
+                find tmp_dir -type f ! -name "*.gz" ! -name "*.zip" ! -name "*.jar" ! -name "*.a" -exec sed -i 's/com\.termux/com.liquid/g' {} + 2>/dev/null
+                
+                dpkg-deb -Znone -b tmp_dir "docs/apt/dists/stable/main/binary-aarch64/$(basename $DEB_FILE)"
+                rm -rf tmp_dir temp.deb
             fi
           done
 
       - name: Generate APT Metadata
         run: |
-          sudo apt-get update && sudo apt-get install -y dpkg-dev
           cd docs/apt
-          for arch in aarch64 arm i686 x86_64; do
-            mkdir -p dists/stable/main/binary-$arch
-            dpkg-scanpackages dists/stable/main/binary-$arch /dev/null | gzip -9c > dists/stable/main/binary-$arch/Packages.gz
-          done
+          dpkg-scanpackages dists/stable/main/binary-aarch64 /dev/null | gzip -9c > dists/stable/main/binary-aarch64/Packages.gz
+          echo "Suite: stable" > dists/stable/Release
+          echo "Codename: stable" >> dists/stable/Release
+          echo "Architectures: aarch64" >> dists/stable/Release
+          echo "Components: main" >> dists/stable/Release
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
